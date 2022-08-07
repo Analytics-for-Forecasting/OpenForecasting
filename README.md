@@ -9,7 +9,7 @@ An open source univariate time series forecasting framework that provides follow
   * Classic statistical and machine learning models including ARIMA, Holt-Winter, MLP, and MSVR.
   * Our proposed deep learning models.
 
-### Main Dependence
+## Main Dependence
 
 ---
 
@@ -19,7 +19,7 @@ An open source univariate time series forecasting framework that provides follow
 * ray = 1.6.0 (as requried by the specific optimizaiton algorithm, if using TaskTuner)
 * scikit-learn = 1.0.2
 
-### Provided models
+## Provided models
 
 ---
 
@@ -58,12 +58,14 @@ Our proposed models are corresponding to these papers.
 | [ESM-CNN](https://github.com/XinzeZhang/TimeSeriesForecasting-torch)  | [Error-feedback stochastic modeling strategy for time series forecasting with convolutional neural networks](https://www.sciencedirect.com/science/article/abs/pii/S1568494619305551)       |
 | ETO-SDNN | Growing stochastic deep neural network for time series forecasting with error-feedback triple-phase optimization |
 
-### Acknowledgement
+## Acknowledgement
+
 ---
 
 * This framework were began to be built by Xinze Zhang while he was a Ph.D student, supervised by Prof. Yukun Bao, in the school of Management, Huazhong university of Science and Technology (HUST).
 
 Notice
+
 * The DeepAR provided in this repository is modified based on the work of [TimeSeries](https://github.com/zhykoties/TimeSeries). Yunkai Zhang, Qiao Jianga, and Xueying Ma are original authors of [TimeSeries](https://github.com/zhykoties/TimeSeries).
 * The ConvRNN provided in this repository is modified based on the work of [ConvRNN](https://github.com/KurochkinAlexey/ConvRNN), KurochkinAlexey, Fess13 are original authors of [ConvRNN](https://github.com/KurochkinAlexey/ConvRNN).
 * The PSO-GESN provided in this repository is modified based on the source code created by [Qi Sima](https://github.com/simaqi18).
