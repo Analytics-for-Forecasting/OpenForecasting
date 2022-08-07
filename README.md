@@ -67,4 +67,3 @@ Notice
 * The DeepAR provided in this repository is modified based on the work of [TimeSeries](https://github.com/zhykoties/TimeSeries). Yunkai Zhang, Qiao Jianga, and Xueying Ma are original authors of [TimeSeries](https://github.com/zhykoties/TimeSeries).
 * The ConvRNN provided in this repository is modified based on the work of [ConvRNN](https://github.com/KurochkinAlexey/ConvRNN), KurochkinAlexey, Fess13 are original authors of [ConvRNN](https://github.com/KurochkinAlexey/ConvRNN).
 * The PSO-GESN provided in this repository is modified based on the source code created by [Qi Sima](https://github.com/simaqi18).
-* The [MSVR](https://github.com/Analytics-for-Forecasting/msvr) provided in this repository is created by Xinze Zhang, Kaishuai Xu, and Siyue Yang.
