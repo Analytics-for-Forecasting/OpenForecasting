@@ -60,10 +60,10 @@ Our proposed models are corresponding to these papers.
 
 ---
 
-* This framework were began to be built by Xinze Zhang while he was a Ph.D student, supervised by Prof. Yukun Bao, in the school of Management, Huazhong university of Science and Technology (HUST).
+* This framework is created by [Xinze Zhang](https://github.com/xinzezhang), [Qi Sima](https://github.com/simaqi18), and [Siyue Yang](https://github.com/zeroGrace), supervised by Prof. Yukun Bao, in the school of Management, Huazhong university of Science and Technology (HUST).
 
 Notice
 
 * The DeepAR provided in this repository is modified based on the work of [TimeSeries](https://github.com/zhykoties/TimeSeries). Yunkai Zhang, Qiao Jianga, and Xueying Ma are original authors of [TimeSeries](https://github.com/zhykoties/TimeSeries).
-* The ConvRNN provided in this repository is modified based on the work of [ConvRNN](https://github.com/KurochkinAlexey/ConvRNN), KurochkinAlexey, Fess13 are original authors of [ConvRNN](https://github.com/KurochkinAlexey/ConvRNN).
+* The ConvRNN provided in this repository is modified based on the work of [ConvRNN](https://github.com/KurochkinAlexey/ConvRNN). KurochkinAlexey, Fess13 are original authors of [ConvRNN](https://github.com/KurochkinAlexey/ConvRNN).
 * The PSO-GESN provided in this repository is modified based on the source code created by [Qi Sima](https://github.com/simaqi18).
