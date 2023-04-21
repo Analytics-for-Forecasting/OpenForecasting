@@ -60,7 +60,7 @@ Our proposed models are corresponding to these papers.
 
 ---
 
-* This framework is created by [Xinze Zhang](https://github.com/xinzezhang), [Qi Sima](https://github.com/simaqi18), and [Siyue Yang](https://github.com/zeroGrace), supervised by Prof. Yukun Bao, in the school of Management, Huazhong university of Science and Technology (HUST).
+* This framework is created by [Xinze Zhang](https://github.com/xinzezhang), supervised by Prof. Yukun Bao, in the school of Management, Huazhong university of Science and Technology (HUST).
 
 Notice
 
