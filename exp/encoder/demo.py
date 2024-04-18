@@ -17,9 +17,6 @@ class rnn(rnn_base):
 
 if __name__ == "__main__":
     parser = get_parser(parsing=False)
-    parser.add_argument('-mode', type=str, default='min' )
-    parser.add_argument('-met', type=float, )
-    parser.add_argument('-re',default=False, action='store_true', help='experiment with cuda')
     args = parser.parse_args()
     
     args.cuda = True
