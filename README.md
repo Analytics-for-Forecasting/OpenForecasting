@@ -25,8 +25,8 @@ To install the dependence of the running environment, using the following comman
 
 ```bash
 cd _requirement
-conda create --name amc --file packages.txt
-conda activate amc
+conda create --name opents --file packages.txt
+conda activate opents
 conda install pip
 pip install -r requirements.txt
 ```
@@ -34,7 +34,6 @@ pip install -r requirements.txt
 For the follower in China, we suggest to config the mirror for conda and pip.
 
 ##### Conda mirror
-
 
 Create the `.condarc` file if it does not exist.
 
@@ -88,7 +87,6 @@ conda clean
 ```
 
 ##### Pip mirror
-
 
 With tencent cloud, create the pip configuration file by `mkdir ~/.pip; nano ~/.pip/pip.conf`, and paste the following:
 
