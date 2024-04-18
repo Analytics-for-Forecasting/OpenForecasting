@@ -62,9 +62,9 @@ class RecurrentNeuralNetwork(nn.Module):
 
         if self.opts.device == torch.device('cpu'):
             self.logger.info('Using CPU...')
+            self.usingCUDA = False
         else:
             self.logger.info('Using Cuda...')
-            self.usingCUDA = False
             self.to(self.opts.device)
             self.usingCUDA = True
             

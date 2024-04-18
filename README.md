@@ -13,7 +13,7 @@ The experiments need to be configured by the python files in the folder `exp`. T
 python exp/encoder/demo.py
 ```
 
-or 
+or:
 
 ```bash
 python main.py -cuda -test -datafolder exp/encoder -dataset demo -exp_name RL -H 2 -model rnn -rep_times 1
