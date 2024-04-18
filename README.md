@@ -16,7 +16,7 @@ python exp/encoder/demo.py
 or 
 
 ```bash
-python main.py -cuda -datafolder exp/eto/sim -exp_name paper.eto.sim -dataset sfts -H 1 -rep_times 15 -met
+python main.py -cuda -test -datafolder exp/encoder -dataset demo -exp_name RL -H 2 -model rnn -rep_times 1
 ```
 
 ## Main Dependence
