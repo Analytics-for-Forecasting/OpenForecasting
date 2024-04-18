@@ -37,8 +37,8 @@ def get_parser(parsing = True):
     parser.add_argument('-H', type=int, default=1, metavar='N',
                         help='steps for prediction (default: 1)')
     # Multi-Output strategy  parameters
-    parser.add_argument('-mo', type=str, default='mimo', metavar='N',
-                        help='methods for Multi-Output  (default: None)')
+    parser.add_argument('-exp_name', type=str, default='mimo', metavar='N',
+                        help='exp_name  (default: mimo)')
 
     # -----------------------------------------------------------------------------------
     # model parameters
@@ -72,6 +72,8 @@ def get_parser(parsing = True):
 
     # -----------------------------------------------------------------------------------
     # experimental log parameters
+    parser.add_argument('-rerun', default=False,action='store_true',
+                        help='Whether to rerun')
     parser.add_argument('-test', default=False,action='store_true',
                         help='Whether to test')
     parser.add_argument('-clean', default=True, action='store_true',
@@ -82,7 +84,7 @@ def get_parser(parsing = True):
     # experiment repetitive times
     parser.add_argument('-rep_times', type=int, default=1, help='experiment repetitive times')
 
-    parser.add_argument('-cuda',default=True,action='store_true', help='experiment with cuda')
+    parser.add_argument('-cuda',default=False, action='store_true', help='experiment with cuda')
     parser.add_argument('-gid',type=int, default=0, help='default gpu id')
 
     # -----------------------------------------------------------------------------------
@@ -94,12 +96,14 @@ def get_parser(parsing = True):
     # parser.add_argument('-tuner_epochPerIter',type=int,default=1)
 
 
+    parser.add_argument('-tag',type=str, default='', help='additional experimental model tag')
     # -----------------------------------------------------------------------------------
     # eval parameters
     parser.add_argument('-metrics', nargs='+', default=['rmse','mape','smape'], help='measures list')
     
     parser.add_argument('-sid', nargs='+', default=['all'], help='experimental series id')
     parser.add_argument('-cid', nargs='+', default=['all'], help='experimental cross validation id')
+    
     
     if parsing:
         params = parser.parse_args()

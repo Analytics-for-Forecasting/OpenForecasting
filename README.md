@@ -7,15 +7,108 @@ An open source time series forecasting framework that provides following feature
 * Ready-to-use forecasting models, supported with both GPU acceleration or CPU only.
 * As for now, we only support univariable time series forecasting. In the future, the multivariable time serires forecasting will be officially provided.
 
+The experiments need to be configured by the python files in the folder `exp`. To replicate or run the experiment in the `exp` folder, e.g., `exp/encoder/demo.py`, just execute:
+
+```bash
+python exp/encoder/demo.py
+```
+
+or 
+
+```bash
+python main.py -cuda -datafolder exp/eto/sim -exp_name paper.eto.sim -dataset sfts -H 1 -rep_times 15 -met
+```
+
 ## Main Dependence
 
----
+To install the dependence of the running environment, using the following commands:
 
-* python >= 3.6
-* pytorch = 1.9.1
-* CUDA (as required as pytorch, if using GPU)
-* ray = 1.6.0 (as requried by the specific optimizaiton algorithm, if using TaskTuner)
-* scikit-learn = 1.0.2
+```bash
+cd _requirement
+conda create --name amc --file packages.txt
+conda activate amc
+conda install pip
+pip install -r requirements.txt
+```
+
+For the follower in China, we suggest to config the mirror for conda and pip.
+
+##### Conda mirror
+
+
+Create the `.condarc` file if it does not exist.
+
+```
+
+touch ~/.condarc
+
+```
+
+Then copy the following mirrors to the `.condarc`:
+
+```
+
+channels:
+
+  - http://mirrors.bfsu.edu.cn/anaconda/pkgs/main
+
+  - http://mirrors.bfsu.edu.cn/anaconda/pkgs/free
+
+  - http://mirrors.bfsu.edu.cn/anaconda/pkgs/r
+
+  - http://mirrors.bfsu.edu.cn/anaconda/pkgs/pro
+
+  - http://mirrors.bfsu.edu.cn/anaconda/pkgs/msys2
+
+show_channel_urls: true
+
+custom_channels:
+
+  conda-forge: http://mirrors.bfsu.edu.cn/anaconda/cloud
+
+  msys2: http://mirrors.bfsu.edu.cn/anaconda/cloud
+
+  bioconda: http://mirrors.bfsu.edu.cn/anaconda/cloud
+
+  menpo: http://mirrors.bfsu.edu.cn/anaconda/cloud
+
+  pytorch: http://mirrors.bfsu.edu.cn/anaconda/cloud
+
+  simpleitk: http://mirrors.bfsu.edu.cn/anaconda/cloud
+
+  intel: http://mirrors.bfsu.edu.cn/anaconda/cloud
+
+```
+
+Then clean the cache and test it:
+
+```bash
+conda update --strict-channel-priority --all  
+conda clean 
+```
+
+##### Pip mirror
+
+
+With tencent cloud, create the pip configuration file by `mkdir ~/.pip; nano ~/.pip/pip.conf`, and paste the following:
+
+```
+
+[global]
+
+index-url = https://mirrors.cloud.tencent.com/pypi/simple/
+
+
+[install]
+
+trusted-host=mirrors.cloud.tencent.com
+
+
+timeout = 120
+
+```
+
+Save the file `pip.conf`.
 
 ## Provided models
 

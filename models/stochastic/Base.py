@@ -9,6 +9,8 @@ import gc
 import torch
 import torch.nn as nn
 import numpy as np
+from task.gpu_mem_track import MemTracker
+import scipy 
 
 class fcLayer(nn.Module):
     def __init__(self, in_features, out_features, device, bias=True):
@@ -17,6 +19,7 @@ class fcLayer(nn.Module):
         self.device = device
         self.fc.to(self.device)
         self.bias = bias
+        
     
     def freeze(self, ):
         self.fc.weight.requires_grad = False
@@ -67,42 +70,22 @@ class ESNCell(nn.Module):
     Outputs: 
         _last_state (batch, hidden_size): tensor containing the hidden state at t time step .
     """
-    def __init__(self, init = 'vanilla', hidden_size = 500, input_dim = 1, nonlinearity = 'relu', leaky_r = 1, weight_scale = 0.9, iw_bound = (-0.1, 0.1), hw_bound=(-1,1),  device='cpu'):
+    def __init__(self, init = 'vanilla', hidden_size = 500, input_dim = 1, nonlinearity = 'relu', weight_scale = 0.9, iw_bound = (-0.1, 0.1), hw_bound=(-1,1), sparsity = 1, device='cpu'):
         super(ESNCell, self).__init__()
         
+        self.init_method = init
         self.Hidden_Size = hidden_size
         self.input_dim = input_dim
         self.device = device
-        self.leaky_r = leaky_r
         self.Weight_scaling = weight_scale
         self.iw_bound = iw_bound
         self.hw_bound = hw_bound
         self.nonlinearity = nonlinearity
-        
+        self.sparsity = sparsity
         
         self.ih = nn.Linear(self.input_dim, self.Hidden_Size, bias=False).to(self.device)
         self.hh = nn.Linear(
                 self.Hidden_Size, self.Hidden_Size, bias=False).to(self.device)
-        
-        
-        w_ih = torch.empty(self.Hidden_Size, input_dim).to(self.device)
-        if isinstance(self.iw_bound, tuple):
-            nn.init.uniform_(w_ih,self.iw_bound[0],self.iw_bound[1])
-        elif isinstance(self.iw_bound, float):
-            nn.init.uniform_(w_ih,-self.iw_bound,self.iw_bound)
-        else:
-            raise ValueError('Invalid iw_bound: {}'.format(self.iw_bound))
-        
-        if init == 'svd':
-            w_hh = self.svd_init()
-        elif init == 'vanilla':
-            w_hh = self.vanilla_init()
-        else:
-            raise ValueError(
-                "Unknown hidden init '{}'".format(init))
-            
-        self.ih.weight = nn.Parameter(w_ih)
-        self.hh.weight = nn.Parameter(w_hh)
         
         if self.nonlinearity == 'tanh':
             self.act_f = torch.tanh
@@ -114,30 +97,61 @@ class ESNCell(nn.Module):
             raise ValueError(
                 "Unknown nonlinearity '{}'".format(nonlinearity))
         
-    def svd_init(self,):
+        self.init_weights()
+
+        
+    def init_weights(self, ):
+        w_ih = torch.empty(self.Hidden_Size, self.input_dim).to(self.device)
+        if isinstance(self.iw_bound, tuple):
+            nn.init.uniform_(w_ih,self.iw_bound[0],self.iw_bound[1])
+        elif isinstance(self.iw_bound, float):
+            nn.init.uniform_(w_ih,-self.iw_bound,self.iw_bound)
+        else:
+            raise ValueError('Invalid iw_bound: {}'.format(self.iw_bound))
+        
+        if self.init_method == 'svd':
+            w_hh = self.svd_init()
+        elif self.init_method == 'vanilla':
+            w_hh = self.vanilla_init()
+        elif self.init_method == 'sparse':
+            w_hh = self.sparse_init()
+        else:
+            raise ValueError(
+                "Unknown hidden init '{}'".format(self.init_method))
+            
+        self.ih.weight = nn.Parameter(w_ih)
+        self.hh.weight = nn.Parameter(w_hh)
+        self.freeze()
+        
+    def svd_init(self, singular_values = None):
         svd_u = torch.empty(
-            self.Hidden_Size, self.Hidden_Size) 
+            self.Hidden_Size, self.Hidden_Size).to(self.device)
         svd_v = torch.empty(
-            self.Hidden_Size, self.Hidden_Size)
+            self.Hidden_Size, self.Hidden_Size).to(self.device)
         # 填充正交矩阵，非零元素依据均值0，标准差std的正态分布生成
         nn.init.orthogonal_(svd_u)
         nn.init.orthogonal_(svd_v)
 
         #生成对角化矩阵
-        svd_s = torch.empty(self.Hidden_Size)
-        if isinstance(self.hw_bound, tuple):
-            nn.init.uniform_(svd_s,self.hw_bound[0],self.hw_bound[1])
-        elif isinstance(self.hw_bound, float):
-            nn.init.uniform_(svd_s,-self.hw_bound,self.hw_bound)
+        if singular_values is None:
+            _svd_s = torch.empty(self.Hidden_Size).to(self.device)
+            if isinstance(self.hw_bound, tuple):
+                nn.init.uniform_(_svd_s,self.hw_bound[0],self.hw_bound[1])
+            elif isinstance(self.hw_bound, float):
+                nn.init.uniform_(_svd_s,-self.hw_bound,self.hw_bound)
+            else:
+                raise ValueError('Invalid hw_bound: {}'.format(self.hw_bound))
         else:
-            raise ValueError('Invalid hw_bound: {}'.format(self.hw_bound))        
+            _svd_s = singular_values.detach().clone().to(self.device)
+            assert _svd_s.size(0) == self.Hidden_Size
         
-        svd_s = torch.diag(svd_s)
-        assert len(svd_s.size()) == 2
 
-        Hidden_weight = svd_u.mm(svd_s).mm(svd_v)
+        _svd_s = torch.diag(_svd_s).to(self.device)
+        assert len(_svd_s.size()) == 2
+
+        Hidden_weight = svd_u.mm(_svd_s).mm(svd_v)
         Hidden_weight = self.Weight_scaling * Hidden_weight
-        Hidden_weight = Hidden_weight.to(self.device)
+        # Hidden_weight = Hidden_weight.to(self.device)
         
         return Hidden_weight
     
@@ -155,12 +169,19 @@ class ESNCell(nn.Module):
         w_hh = w_hh * self.Weight_scaling / spectral_radius
         return w_hh
     
+    def sparse_init(self,):
+        w_hh_temp = scipy.sparse.rand(self.Hidden_Size, self.Hidden_Size, density = 1 - self.sparsity, format='csc').toarray()
+        w_hh_temp[np.where(w_hh_temp != 0)] -= 0.5
+        
+        w_hh_temp = torch.tensor(w_hh_temp).to(torch.float32).to(self.device)
+        spectral_radius = torch.max(torch.abs(torch.linalg.eigvals(w_hh_temp).real))
+        w_hh = w_hh_temp * self.Weight_scaling / spectral_radius
+        return w_hh
+        
     def forward(self, current_input, last_state):
         current_state = self.ih(current_input) + self.hh(last_state)
         current_state = self.act_f(current_state)
-        _last_state = (1- self.leaky_r) * last_state + self.leaky_r * current_state
-        
-        return _last_state
+        return current_state
 
     def freeze(self, ):
         self.ih.weight.requires_grad = False
@@ -178,32 +199,56 @@ class esnLayer(nn.Module):
         \tlayer_hs, shape: (N_samples, hidden_size, steps)\n
         \tlast_hs, shape: (N_samples, hidden_size)        
     '''
-    def __init__(self, init = 'vanilla', hidden_size = 500, input_dim = 1, nonlinearity = 'sigmoid', leaky_r = 1, weight_scale = 0.9, iw_bound = (-0.1, 0.1), hw_bound=(-1,1),  device='cpu'):
+    def __init__(self, init = 'vanilla', hidden_size = 500, input_dim = 1, nonlinearity = 'sigmoid', leaky_r = 1, weight_scale = 0.9, iw_bound = (-0.1, 0.1), hw_bound=(-1,1), sparsity = 1, device='cpu'):
         super(esnLayer, self).__init__()
         self.esnCell = ESNCell(
             init=init,
             hidden_size=hidden_size,
             input_dim=input_dim,
             nonlinearity=nonlinearity,
-            leaky_r=leaky_r,
             weight_scale=weight_scale,
             iw_bound=iw_bound,
             hw_bound=hw_bound,
-            device=device
+            device=device,
+            sparsity = sparsity
         )
+        self.leaky_r = leaky_r
         self.Hidden_Size = hidden_size
         self.device = device
     
-    def forward(self, x):
+    def init_weights(self,):
+        self.esnCell.init_weights()
+    
+    def get_weights(self,):
+        '''For debug'''
+        return [self.esnCell.ih.weight, self.esnCell.hh.weight]
+    
+    
+    def forward(self, x, _last_state = None):
+        '''
+        return: layer_hidden_state, last_state\n
+        layer_hidden_state: (samples,Hidden_Size, time_steps)\n
+        _last_state: (samples, Hidden_Size )
+        '''
+        # with torch.no_grad():
         samples, time_steps = x.shape[0], x.shape[2]
-        layer_hidden_state = []
-        last_state = torch.zeros(samples, self.Hidden_Size).to(self.device)
+        layer_hidden_state = torch.empty(samples,self.Hidden_Size, time_steps).to(self.device)
+        
+        # layer_hidden_state = []
+        if _last_state is None:
+            last_state = torch.zeros(samples, self.Hidden_Size).to(self.device)
+        else:
+            assert _last_state.shape[1] == self.Hidden_Size
+            last_state = _last_state.detach().clone().to(self.device)
+        
         for t in range(time_steps):
-            last_state = self.esnCell(x[:,:,t],  last_state)
-            layer_hidden_state.append(last_state)
+            current_state = self.esnCell(x[:,:,t],  last_state)
+            last_state = (1- self.leaky_r) * last_state + self.leaky_r * current_state
+            layer_hidden_state[:,:,t] = last_state
             torch.cuda.empty_cache() if next(self.parameters()).is_cuda else gc.collect()
         
-        layer_hidden_state = torch.stack(layer_hidden_state, dim=2)
+        
+        # layer_hidden_state = torch.stack(layer_hidden_state, dim=2)
         torch.cuda.empty_cache() if next(self.parameters()).is_cuda else gc.collect()
         
         return layer_hidden_state, last_state
@@ -236,21 +281,6 @@ class cnnLayer(nn.Module):
         
         self.conv = nn.Conv1d(self.in_channels, self.out_channels,self.kernel_size,padding=self.padding, padding_mode=padding_mode).to(self.device)     #一维卷积
         
-        weight = torch.empty(self.out_channels, self.in_channels, self.kernel_size).to(self.device)
-        bias = torch.empty(self.out_channels).to(self.device)
-        
-        if isinstance(self.hw_bound, tuple):
-            nn.init.uniform_(weight,self.hw_bound[0],self.hw_bound[1])
-            nn.init.uniform_(bias, self.hw_bound[0],self.hw_bound[1])
-        elif isinstance(self.hw_bound, float):
-            nn.init.uniform_(weight,-self.hw_bound,self.hw_bound)
-            nn.init.uniform_(bias, -self.hw_bound,self.hw_bound)
-        else:
-            raise ValueError('Invalid hw_bound: {}'.format(self.hw_bound))
-        
-        self.conv.weight = nn.Parameter(weight)
-        self.conv.bias = nn.Parameter(bias)
-        
         if nonlinearity == 'tanh':
             self.act_f = torch.tanh
         elif nonlinearity == 'relu':
@@ -265,7 +295,29 @@ class cnnLayer(nn.Module):
         if self.pooling_tag:
             self.pooling_size = pooling_size
             self.pooling = nn.AvgPool1d(kernel_size=self.pooling_size, stride=1, padding=0)
+
+        self.init_weights()
+        
+    def init_weights(self,):
+        weight = torch.empty(self.out_channels, self.in_channels, self.kernel_size).to(self.device)
+        bias = torch.empty(self.out_channels).to(self.device)
+        if isinstance(self.hw_bound, tuple):
+            nn.init.uniform_(weight,self.hw_bound[0],self.hw_bound[1])
+            nn.init.uniform_(bias, self.hw_bound[0],self.hw_bound[1])
+        elif isinstance(self.hw_bound, float):
+            nn.init.uniform_(weight,-self.hw_bound,self.hw_bound)
+            nn.init.uniform_(bias, -self.hw_bound,self.hw_bound)
+        else:
+            raise ValueError('Invalid hw_bound: {}'.format(self.hw_bound))
+        
+        self.conv.weight = nn.Parameter(weight)
+        self.conv.bias = nn.Parameter(bias)
+        self.freeze()
     
+    def get_weights(self,):
+        '''For debug'''
+        return [self.conv.weight, self.conv.bias]
+        
     def freeze(self, ):
         self.conv.weight.requires_grad = False
         self.conv.bias.requires_grad = False
@@ -329,7 +381,15 @@ class cesLayer(nn.Module):
             hw_bound=esn_hw_bound,
             device=device
         )
-       
+        
+    def init_weights(self,):
+        self.cnnLayer.init_weights()
+        self.esnLayer.init_weights()
+    
+    def get_weights(self,):
+        '''For debug'''
+        return self.cnnLayer.get_weights().extend(self.esnLayer.get_weights())
+    
     def forward(self, x):
         '''
         input: \tx, shape: (N_samples, dimensions(input_dim), steps) \n      
@@ -388,6 +448,14 @@ class escLayer(nn.Module):
                 device=device,
                 nonlinearity=nonlinearity
             )
+
+    def init_weights(self,):
+        self.cnnLayer.init_weights()
+        self.esnLayer.init_weights()
+
+    def get_weights(self,):
+        '''For debug'''
+        return self.esnLayer.get_weights().extend(self.cnnLayer.get_weights())
         
     def forward(self, x):
         '''

@@ -36,27 +36,26 @@ class Deep_ESN(EchoStateNetwork):
             self.stack_layers.append(layer_esn)
 
         self.readout_size = self.num_layers * self.Hidden_Size
-        if self.fc_io:
-            self.readout_size += self.Input_dim * \
-                (self.Time_steps - self.Discard_steps)
-
+        if self.fc_io == 'step':
+            self.readout_size += self.Input_dim
+        elif self.fc_io == 'series':
+            self.readout_size += self.Hidden_Size + self.Lag_order
+            
         self.readout = nn.Linear(self.readout_size, self.Output_dim)
+        self.readout.weight.requires_grad = False
+        self.readout.bias.requires_grad = False
 
     def layer_transform(self, x, layer):
         '得到Layer层的hidden_state和最后一个state'
-
         layer_hidden_state, last_state = self.stack_layers[layer](x)
         return layer_hidden_state, last_state
 
     def reservior_transform(self, input_state):
-        # Hidden_States is only read as -1
-        assert self.read_hidden == 'last'
-
         Hidden_States = []
         for layer in range(self.num_layers):
-            input_state, layer_last_state = self.layer_transform(
+            input_state, _ = self.layer_transform(
                 input_state, layer)
-            Hidden_States.append(layer_last_state)
+            Hidden_States.append(input_state)
 
             torch.cuda.empty_cache() if next(self.parameters()).is_cuda else gc.collect()
         Hidden_States = torch.cat(Hidden_States, dim=1)

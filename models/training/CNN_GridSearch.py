@@ -1,5 +1,5 @@
 from task.parser import get_parser
-from task.TaskWrapper import *
+from task._deprecated.TaskWrapper import *
 from models.training.CNN import GS_CNN
 
 class gscnnTask(Task):

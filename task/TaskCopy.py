@@ -147,9 +147,9 @@ class Task(Opt):
                     torch.save(best_hyper, tuner_path)
                 else:
                     src_path = tuner_path
-                    series_dir = os.path.join(self.task_dir, 'series{}'.format(sub_count))
-                    os_makedirs(series_dir)
-                    dst_path = os.path.join(series_dir, 'series{}.best.pt'.format(sub_count))
+                    model_fit_dir = os.path.join(self.task_dir, 'series{}'.format(sub_count))
+                    os_makedirs(model_fit_dir)
+                    dst_path = os.path.join(model_fit_dir, 'series{}.best.pt'.format(sub_count))
                     copyfile(src_path, dst_path)
                     
                     # best_hyper = torch.load(tuner_path)
@@ -172,9 +172,9 @@ class Task(Opt):
             
         for sub_count, series_Pack in enumerate(tqdm(self.data_opts.seriesPack)):
             # self.task_dir = os.path.join(self.task_dir, 'series_{}'.format(sub_count))
-            series_dir = os.path.join(self.task_dir, 'series{}'.format(sub_count))
-            os_makedirs(series_dir)
-            s_m_dir = os.path.join(series_dir, 'eval_results')
+            model_fit_dir = os.path.join(self.task_dir, 'series{}'.format(sub_count))
+            os_makedirs(model_fit_dir)
+            s_m_dir = os.path.join(model_fit_dir, 'eval_results')
             os_makedirs(s_m_dir)
             
             
@@ -276,19 +276,19 @@ class Task(Opt):
         self.metrics = metrics
         eval_list = []
         for sub_count in range(self.data_opts.info.num_series):
-            series_dir = os.path.join(self.task_dir, 'series{}'.format(sub_count))
-            os_makedirs(series_dir)
+            model_fit_dir = os.path.join(self.task_dir, 'series{}'.format(sub_count))
+            os_makedirs(model_fit_dir)
             
-            s_m_dir = os.path.join(series_dir, 'eval_results')
+            s_m_dir = os.path.join(model_fit_dir, 'eval_results')
             os_makedirs(s_m_dir)
             
-            s_l_dir = os.path.join(series_dir, 'logs')
+            s_l_dir = os.path.join(model_fit_dir, 'logs')
             os_makedirs(s_l_dir)
             
-            s_f_dir = os.path.join(series_dir, 'figures')
+            s_f_dir = os.path.join(model_fit_dir, 'figures')
             os_makedirs(s_f_dir)
             
-            s_t_dir = os.path.join(series_dir, 'tuner')
+            s_t_dir = os.path.join(model_fit_dir, 'tuner')
             os_makedirs(s_t_dir)
             
             

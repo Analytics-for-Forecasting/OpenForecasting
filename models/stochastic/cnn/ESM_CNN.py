@@ -11,6 +11,9 @@ import torch.nn as nn
 import numpy as np
 from tqdm import trange
 import gc
+from  task.TaskLoader import torch_dataloader, dnn_dataset
+import math
+
 
 class ESM_CNN(nn.Module):
     # Incremental CNN
@@ -21,22 +24,31 @@ class ESM_CNN(nn.Module):
         for (arg, value) in opts.dict.items():
             self.logger.info("Argument %s: %r", arg, value)
 
-        self.input_dim = 1 + opts.cov_dim
-        self.Timesteps = opts.steps
+        self.Lag_order  = opts.lag_order
         self.Output_dim = opts.H
-        self.Channel_size = opts.channel_size       # num of added channels
-        self.Candidate_size = opts.candidate_size
-        self.Kernel_size = opts.kernel_size
-        self.p_size = opts.p_size
+        self.Input_dim = opts.input_dim
+        self.Time_steps = self.Lag_order - self.Input_dim + 1         
+
+        self.Candidate_size = opts.candidate_size if 'candidate_size' in opts.dict else 10
+        self.Channel_size = opts.channel_size  if 'channel_size' in opts.dict else 10
+        self.Kernel_size = opts.kernel_size if 'kernel_size' in opts.dict else math.ceil(self.Lag_order / 4)
+        
+        self.Kernel_size = max(2, self.Kernel_size)
+        self.Kernel_list = opts.Kernel_list if 'Kernel_list' in opts.dict else list(dict.fromkeys([math.ceil(
+            self.Time_steps / 3), math.ceil(self.Time_steps / 4), math.ceil(self.Time_steps / 5), math.ceil(self.Time_steps / 6)]))
+        
+        self.Kernel_list = [max(k, 2) for k in self.Kernel_list ]
+                
+        self.p_size = opts.p_size if 'p_size' in opts.dict else 3
         self.device = opts.device
 
-        self.hw_lambda = opts.hw_lambda
-        self.Kernel_list = [int(
-            opts.steps / 3), int(opts.steps / 4), int(opts.steps / 5), int(opts.steps / 6)]
-
-        self.tolerance = opts.tolerance
-        self.opts.lambda_reg = 0
-
+        self.hw_lambda = opts.hw_lambda if 'hw_lambda' in opts.dict else 0.5
+        
+        self.tolerance = opts.tolerance if 'tolerance' in opts.dict else 0
+        self.reg_lambda = opts.reg_lambda if 'reg_lambda' in opts.dict else 0
+        
+        self.nonlinearity = opts.nonlinearity if 'nonlinearity' in opts.dict else 'tanh'
+        
         self.init_arch()
         self.loss_fn = nn.MSELoss()
 
@@ -47,9 +59,11 @@ class ESM_CNN(nn.Module):
         
         if self.opts.device == torch.device('cpu'):
             self.logger.info('Not using cuda...')
+            self.usingCUDA = False
         else:
             self.logger.info('Using Cuda...')
             self.to(self.opts.device)
+            self.usingCUDA = True
 
     def init_arch(self,):
         self.conv_list = nn.ModuleList([])
@@ -78,7 +92,7 @@ class ESM_CNN(nn.Module):
         '''
         if conv_weight is not None and conv_bias is not None:
             k_size = conv_weight.data.size(2)
-            Conv = nn.Conv1d(self.input_dim, 1, k_size,
+            Conv = nn.Conv1d(self.Input_dim, 1, k_size,
                              padding=0).to(self.opts.device)
             Conv.weight.data = conv_weight
             Conv.bias.data = conv_bias
@@ -117,39 +131,25 @@ class ESM_CNN(nn.Module):
         # _Hidden = self.io_check(Hidden, x)
         W, tag = self.solve_output(Hidden, y)
         if show:
-            self.logger.info('LSM: {} \t L2 regular: {}'.format(            tag, 'True' if self.opts.lambda_reg != 0 else 'False'))
+            self.logger.info('LSM: {} \t L2 regular: {}'.format(            tag, 'True' if self.reg_lambda != 0 else 'False'))
         ho = nn.Linear(Hidden.size(1), y.size(1))
         ho.bias = nn.Parameter(W[:, 0], requires_grad=False)
         ho.weight = nn.Parameter(W[:, 1:], requires_grad=False)
         ho.inverse = tag
         return ho
 
-    def filter_search(self, input, error):
+    def filter_search(self, dataloader, error):
         # for Lambda in self.Lambdas:
-        best_kernel = self.greedy_select(input, error, self.hw_lambda)
-        channel = cnnLayer(
-            input_dim=self.input_dim,
-            out_channels=1,
-            kernel_size=best_kernel.kernel_size,
-            nonlinearity=self.opts.nonlinearity,
-            device=self.device
-        )
-        channel.update(best_kernel.conv_weight, best_kernel.conv_bias)
-        channel.freeze()
-        channel.kernel_size = best_kernel.kernel_size
-        return channel, best_kernel.ho
-
-    def greedy_select(self, dataloader, error, Lambda):
         best_kernel = Opt()
         best_kernel.loss = float('inf')
 
         for kernel_size in self.Kernel_list:
             conv_sets = cnnLayer(
-                input_dim=self.input_dim,
+                input_dim=self.Input_dim,
                 out_channels=self.Candidate_size,
                 kernel_size=kernel_size,
-                hw_bound=(-Lambda, Lambda),
-                nonlinearity=self.opts.nonlinearity,
+                hw_bound=(-self.hw_lambda, self.hw_lambda),
+                nonlinearity=self.nonlinearity,
                 device=self.device
             )
             conv_sets.freeze()
@@ -165,13 +165,24 @@ class ESM_CNN(nn.Module):
                     best_kernel.loss = loss
                     best_kernel.kernel_size = kernel_size
                     best_kernel.conv_weight = conv_sets.conv.weight[i, :, :].reshape(
-                        1, self.input_dim, kernel_size).detach().clone()
+                        1, self.Input_dim, kernel_size).detach().clone()
                     best_kernel.conv_bias = conv_sets.conv.bias[i].view(
                         -1).detach().clone()
                     best_kernel.ho = ho
 
                 torch.cuda.empty_cache() if next(conv_sets.parameters()).is_cuda else gc.collect()
-        return best_kernel
+                
+        channel = cnnLayer(
+            input_dim=self.Input_dim,
+            out_channels=1,
+            kernel_size=best_kernel.kernel_size,
+            nonlinearity=self.nonlinearity,
+            device=self.device
+        )
+        channel.update(best_kernel.conv_weight, best_kernel.conv_bias)
+        channel.freeze()
+        channel.kernel_size = best_kernel.kernel_size
+        return channel, best_kernel.ho
 
     def batch_transform(self, data_loader, channel):
         h_states = []
@@ -187,8 +198,13 @@ class ESM_CNN(nn.Module):
         torch.cuda.empty_cache() if next(channel.parameters()).is_cuda else gc.collect()
         return h_states
 
+        
     # @profile
-    def xfit(self, train_loader, val_loader):
+    def xfit(self, train_data, val_data):
+        # min_vmse = 9999
+        train_loader = self.data_loader(train_data)
+        val_loader = self.data_loader(val_data)
+        
         min_vrmse = float('inf')
         x = []
         y = []
@@ -212,16 +228,14 @@ class ESM_CNN(nn.Module):
 
         for i in trange(self.Channel_size):
             channel, ho = None, None
-            if self.opts.search == 'greedy':
-                channel, ho = self.filter_search(train_loader, Error)
-                
-                self.logger.info('LSM: {} \t L2 regular: {}'.format(            ho.inverse, 'True' if self.opts.lambda_reg != 0 else 'False'))
-                
-                self.conv_list.append(channel)
-                self.ho_list.append(ho)
-            else:
-                raise ValueError(
-                    'Invalid search algo: {}'.format(self.opts.search))
+
+            channel, ho = self.filter_search(train_loader, Error)
+            
+            self.logger.info('LSM: {} \t L2 regular: {}'.format(            ho.inverse, 'True' if self.reg_lambda != 0 else 'False'))
+            
+            self.conv_list.append(channel)
+            self.ho_list.append(ho)
+
 
             # update error
             h_states = self.batch_transform(train_loader, channel)
@@ -252,6 +266,18 @@ class ESM_CNN(nn.Module):
 
         return self.fit_info
 
+    def data_loader(self, data, _batch_size = None):
+        '''
+        Transform the numpy array data into the pytorch data_loader
+        '''
+        data_batch_size = self.opts.batch_size if _batch_size is None else _batch_size
+        set_data = dnn_dataset(data, self.Output_dim, self.Lag_order,self.Input_dim)
+        # set_if_x_data = if_choose(set_data.data,self.if_operator)
+        # set_data.data = set_if_x_data
+        
+        set_loader = torch_dataloader(set_data, batch_size= data_batch_size,cuda= self.usingCUDA)
+        return set_loader
+
     def predict(self, x,):
         '''
         x: (numpy.narray) shape: [sample, full-len, dim]
@@ -278,10 +304,57 @@ class ESM_CNN(nn.Module):
         pred = torch.cat(pred, dim=0).detach().cpu().numpy()
         
         return x, y, pred
+
+    def task_pred(self, task_data):
+        data_loader = self.data_loader(task_data)
+        x, y, pred = self.loader_pred(data_loader)
+        
+        return x, y, pred
     
 class ES_CNN(ESM_CNN):
     def __init__(self, opts=None, logger=None):
-        super().__init__(opts, logger)
+        nn.Module.__init__(self,)
+        # super().__init__(opts, logger)
+        self.opts = opts
+        self.logger = logger
+        for (arg, value) in opts.dict.items():
+            self.logger.info("Argument %s: %r", arg, value)
+
+        self.Lag_order  = opts.lag_order
+        self.Input_dim = opts.input_dim if 'input_dim' in opts.dict else 1
+        self.Time_steps = self.Lag_order - self.Input_dim + 1    
+        
+        self.Output_dim = opts.H
+        self.Channel_size = opts.channel_size  if 'channel_size' in opts.dict else 10
+        self.Kernel_size = opts.kernel_size if 'kernel_size' in opts.dict else math.ceil(self.Lag_order / 4)
+        self.Kernel_size = max(2, self.Kernel_size)
+        
+        self.p_size = opts.p_size if 'p_size' in opts.dict else 3
+        self.device = opts.device
+
+        self.hw_lambda = opts.hw_lambda if 'hw_lambda' in opts.dict else 0.5
+        
+        self.tolerance = opts.tolerance if 'tolerance' in opts.dict else 0
+        self.reg_lambda = opts.reg_lambda if 'reg_lambda' in opts.dict else 0
+        
+        self.nonlinearity = opts.nonlinearity if 'nonlinearity' in opts.dict else 'tanh'
+
+        self.init_arch()
+        self.loss_fn = nn.MSELoss()
+
+        self.best_conv_id = opts.channel_size - 1
+        self.fit_info = Opt()
+        self.fit_info.loss_list = []
+        self.fit_info.vloss_list = []
+        
+        if self.opts.device == torch.device('cpu'):
+            self.logger.info('Not using cuda...')
+            self.usingCUDA = False
+        else:
+            self.logger.info('Using Cuda...')
+            self.to(self.opts.device)
+            self.usingCUDA = True
+
 
     def init_arch(self, ):
         self.conv_list = nn.ModuleList([])
@@ -289,23 +362,28 @@ class ES_CNN(ESM_CNN):
 
         for w in range(self.Channel_size):
             channel = cnnLayer(
-                input_dim=self.input_dim,
+                input_dim=self.Input_dim,
                 out_channels=1,
                 kernel_size=self.Kernel_size,
                 hw_bound=(-self.hw_lambda, self.hw_lambda),
                 pooling_size=self.p_size,
-                nonlinearity=self.opts.nonlinearity,
+                nonlinearity=self.nonlinearity,
                 device=self.device
             )
             channel.freeze()
             self.conv_list.append(channel)
 
-            readout_size = self.Timesteps - self.Kernel_size - self.p_size + 2
-            readout = nn.Linear(readout_size, self.Output_dim)
-            self.ho_list.append(readout)
+            # readout_size = self.Time_steps - self.Kernel_size - self.p_size + 2
+            # readout = nn.Linear(readout_size, self.Output_dim)
+            # self.ho_list.append(readout)
 
     # @profile
-    def xfit(self, train_loader, val_loader):
+    def xfit(self, train_data, val_data):
+        # min_vmse = 9999
+        # self.init_input_strip()
+        train_loader = self.data_loader(train_data)
+        val_loader = self.data_loader(val_data)
+        
         min_vrmse = float('inf')
         x = []
         y = []
@@ -331,9 +409,9 @@ class ES_CNN(ESM_CNN):
             # update error
             h_states = self.batch_transform(train_loader, self.conv_list[i])
             h_states = torch.flatten(h_states, start_dim=1)
-            self.ho_list[i] = self.update_readout(h_states, Error)
+            self.ho_list.append(self.update_readout(h_states, Error)) 
             
-            self.logger.info('LSM: {} \t L2 regular: {}'.format(            self.ho_list[i].inverse, 'True' if self.opts.lambda_reg != 0 else 'False'))
+            self.logger.info('LSM: {} \t L2 regular: {}'.format(            self.ho_list[i].inverse, 'True' if self.reg_lambda != 0 else 'False'))
                             
             pred = pred + self.ho_list[i](h_states)
             Error = y - pred
@@ -369,7 +447,7 @@ class Stoc_CNN(ESM_CNN):
 
     def init_arch(self,):
         self.channel = cnnLayer(
-            input_dim=self.input_dim,
+            input_dim=self.Input_dim,
             out_channels=self.Channel_size,
             kernel_size=self.Kernel_size,
             hw_bound=(-self.hw_lambda, self.hw_lambda),
@@ -378,7 +456,7 @@ class Stoc_CNN(ESM_CNN):
         )
         self.channel.freeze()
         readout_size = self.Channel_size * \
-            (self.Timesteps - self.Kernel_size - self.p_size + 2)
+            (self.Time_steps - self.Kernel_size - self.p_size + 2)
         self.readout = nn.Linear(readout_size, self.Output_dim)
 
     def forward(self, input):
@@ -387,7 +465,11 @@ class Stoc_CNN(ESM_CNN):
         pred = self.readout(fm_view)
         return pred
 
-    def xfit(self, train_loader, val_loader):
+    def xfit(self, train_data, val_data):
+        # min_vmse = 9999
+        train_loader = self.data_loader(train_data)
+        val_loader = self.data_loader(val_data)
+        
         y = []
         for batch_x, batch_y in (train_loader):
             batch_x = batch_x.to(self.device)

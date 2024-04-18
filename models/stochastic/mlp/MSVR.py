@@ -18,32 +18,46 @@ import numpy as np
 from sklearn.metrics.pairwise import pairwise_kernels
 from sklearn.metrics import mean_squared_error
 import torch
+from  task.TaskLoader import mlp_dataset
+from task.TaskLoader import Opt
+from task.metric import rmse
 
 class MSVR():
-    def __init__(self, params=None, logger=None):
-        self.params = params
+    def __init__(self, opts=None, logger=None):
+        self.opts = opts
         self.logger = logger
-        self.params.device = torch.device('cpu')
-        for (arg, value) in params.dict.items():
+        self.opts.device = torch.device('cpu')
+        for (arg, value) in opts.dict.items():
             self.logger.info("Argument %s: %r", arg, value)
         
         super(MSVR, self).__init__()
         
         
-        self.kernel = params.kernel
-        self.degree = params.degree
-        self.gamma = params.gamma
-        self.coef = params.coef
-        self.tol = params.tol
-        self.C = params.C
-        self.epsilon = params.epsilon
+        self.kernel = opts.kernel if 'kernel' in opts.kernel else 'rbf'
+        self.degree = opts.degree
+        self.gamma = opts.gamma
+        self.coef = opts.coef
+        self.tol = opts.tol
+        self.C = opts.C
+        self.epsilon = opts.epsilon
         self.Beta = None
         self.NSV = None
         self.xTrain = None
+        self.Lag_order  = opts.lag_order
+        self.Output_dim = opts.H
         
+
+    def data_loader(self, data,):
+        '''
+        Transform the numpy array data into the pytorch data_loader
+        '''
+        set_data = mlp_dataset(data, self.Output_dim, self.Lag_order)      
+        # set_loader = torch_dataloader(set_data, batch_size= set_data.samples,cuda= False)
+        return set_data
     
-    def xfit(self, train_loader, val_loader):
-        """fit the data to scn
+    # @profile
+    def xfit(self, train_data, val_data):
+        """fit the data to msvr
         
         Parameters
         ----------
@@ -56,31 +70,35 @@ class MSVR():
         -------
         self : returns an instance of self.
         """
+        self.fit_info = Opt()
+        
+        train_loader = self.data_loader(train_data)
+        val_loader = self.data_loader(val_data)
+        
         with torch.no_grad():
-            train_x, train_y = None, None
-            for batch_x, batch_y in train_loader:
-                batch_x = batch_x.to(torch.float32).to(self.params.device)
-                batch_y = batch_y.to(torch.float32).to(self.params.device)
-                train_x, train_y = batch_x.detach().clone().numpy(), batch_y.detach().clone().numpy()
+            train_x, train_y = train_loader.data, train_loader.label
+            # for batch_x, batch_y in train_loader:
+            #     batch_x = batch_x.to(torch.float32).to(self.opts.device)
+            #     batch_y = batch_y.to(torch.float32).to(self.opts.device)
+            #     train_x, train_y = batch_x.detach().clone().numpy(), batch_y.detach().clone().numpy()
 
-            val_x, val_y = None, None
-            for batch_x, batch_y in val_loader:
-                batch_x = batch_x.to(torch.float32).to(self.params.device)
-                batch_y = batch_y.to(torch.float32).to(self.params.device)
-                val_x, val_y = batch_x.detach().clone().numpy(), batch_y.detach().clone().numpy()
+            val_x, val_y = val_loader.data, val_loader.label
+            # for batch_x, batch_y in val_loader:
+            #     batch_x = batch_x.to(torch.float32).to(self.opts.device)
+            #     batch_y = batch_y.to(torch.float32).to(self.opts.device)
+            #     val_x, val_y = batch_x.detach().clone().numpy(), batch_y.detach().clone().numpy()
                 
             self.fit(train_x, train_y)
             pred = self.predict(train_x)
-            
-            loss = mean_squared_error(train_y, pred)
             vpred = self.predict(val_x)
-            vloss = mean_squared_error(val_y, vpred)
-            
 
-            self.logger.info('Training MSE: {:.8f} \t Validating MSE: {:.8f} '.format(
-                loss, vloss))
+            self.fit_info.trmse = rmse(train_y,pred)
+            self.fit_info.vrmse = rmse(val_y, vpred)
+
+        self.logger.critical(
+            'Training RMSE: {:.4g} \t Validating RMSE: {:.4g}'.format(self.fit_info.trmse, self.fit_info.vrmse))
             
-        return vloss
+        return self.fit_info
 
     def fit(self, x, y):
         self.xTrain = x.copy()
@@ -214,21 +232,18 @@ class MSVR():
         self.NSV = len(i1)
 
     def predict(self, input):
-        input = torch.tensor(input).float().to(self.params.device).numpy()
+        input = torch.tensor(input).float().to(self.opts.device).numpy()
         H = pairwise_kernels(input, self.xTrain, metric=self.kernel, filter_params=True,
                              degree=self.degree, gamma=self.gamma, coef=self.coef)
         yPred = np.dot(H, self.Beta)
         return yPred
 
-    # def fit_validate(self, x, y, vx, vy):
-    #     self.fit(x,y)
+    def loader_pred(self, data_loader):
+        x, y = data_loader.data, data_loader.label
+        pred = self.predict(x)
+        return x, y, pred
 
-    #     pred = self.predict(x)
-
-    #     self.loss = mean_squared_error(y, pred)
-    #     rmse = np.sqrt(self.loss)
-
-    #     vpred = self.predict(vx)
-    #     vrmse = np.sqrt(mean_squared_error(vy, vpred))
-
-    #     return rmse, vrmse, pred, vpred
+    def task_pred(self, task_data):
+        data_loader = self.data_loader(task_data)
+        x, y, pred = self.loader_pred(data_loader)
+        return x, y, pred

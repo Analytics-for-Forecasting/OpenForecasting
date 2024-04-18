@@ -163,9 +163,9 @@ class ReadoutTuner(StageTuner):
         self.val_size = self.v_state.shape[0]
         self.total_size = self.tra_size + self.val_size
     
-    def solve_output(self, Hidden_States, y, lambda_reg=1.0):
+    def solve_output(self, Hidden_States, y, reg_lambda=1.0):
         '''
-        sovle the output with ridge regression, lambda_reg (default) = 1.0
+        sovle the output with ridge regression, reg_lambda (default) = 1.0
         '''
         t_hs = torch.cat((torch.ones(Hidden_States.size(0), 1).to(
             self.device), Hidden_States), dim=1)
@@ -175,7 +175,7 @@ class ReadoutTuner(StageTuner):
         HTH = torch.mm(t_hs.t(), t_hs)
         HTY = torch.mm(t_hs.t(), y)
 
-        I = (lambda_reg * torch.eye(HTH.size(0))).to(self.device)
+        I = (reg_lambda * torch.eye(HTH.size(0))).to(self.device)
         A = HTH + I
 
         orig_rank = torch.linalg.matrix_rank(A.float()).item()
@@ -189,13 +189,13 @@ class ReadoutTuner(StageTuner):
         else:
             W = torch.mm(torch.linalg.pinv(A.cpu()),HTY.cpu()).to(self.device)
             
-        # self.logger.info('Solving Method: {} \t L2 regular: {}'.format(tag, 'True' if self.lambda_reg != 0 else 'False'))
+        # self.logger.info('Solving Method: {} \t L2 regular: {}'.format(tag, 'True' if self.reg_lambda != 0 else 'False'))
         return W, tag
     
     def _fitness(self, config):
         '''To do'''
-        lambda_reg = config['lambda_reg']
-        W, _ = self.solve_output(self.state, self.E, lambda_reg)
+        reg_lambda = config['reg_lambda']
+        W, _ = self.solve_output(self.state, self.E, reg_lambda)
         loss = torch.dist(self.v_state @ W, self.v_E).item()
         # another loss:
         # loss = self.val_size / self.total_size * torch.dist((self.v_state @ W, self.v_E).item() + self.tra_size / self.total_size * torch.dist((self.state @ W, self.E).item()

@@ -52,6 +52,15 @@ def smape(target, pred, ith=None):
         output = h_smape(target, pred, ith)
     return output
 
+def smape100(target, pred, ith=None):
+    '''
+    target : np.array(n_samples, n_outputs)\n
+    pred   : np.array(n_samples, n_outputs)
+    '''
+    output = smape(target, pred, ith=ith)
+    output = output * 100
+    return output
+
 def rmse(target, pred, ith = None):
     '''
     target : np.array(n_samples, n_outputs)\n
@@ -122,10 +131,13 @@ def mase(target, pred, naiveP, ith = None):
         t = target[:,ith-1] / naiveP
         p = pred[:, ith-1] / naiveP 
         
-        
+        # t = target[:,ith-1] 
+        # p = pred[:, ith-1]  
         # _e = 0
-        # for i in range(0, t.shape[0]):
-        #     _e += abs(t[i]-naiveP[i]) 
+        # for i in range(0, t.shape[0]-1):
+        #     _e += abs(t[i+1]-t[i]) 
+        # scale_error = _e /  (t.shape[0] - 1)
+        # _h_mase = mean_absolute_error(t,p) / scale_error
             
         #     # Due to the multiple-step-ahead forecasting x_{t+1}, x_{t+2},...x_{t+h},, the naive forecasting using the last actual value x_t to make prediction, thus the prediction value of the naive method should be test_input[:, -1]
         # scale_error = _e /  (t.shape[0] - 1)

@@ -17,6 +17,7 @@ import json
 from functools import reduce
 from pathlib import Path
 import shutil
+import pandas as pd
 
 matplotlib.use('Agg')
 #matplotlib.rcParams['savefig.dpi'] = 300 #Uncomment for higher plot resolutions
@@ -56,6 +57,17 @@ def toTorch(train_input, train_target, test_input, test_target):
         test_target).float()
     return train_input, train_target, test_input, test_target
 
+def unpadding(y):
+    a = y.copy()
+    h = y.shape[1]
+    s = np.empty(y.shape[0] + y.shape[1] - 1)
+
+    for i in range(s.shape[0]):
+        s[i] = np.diagonal(np.flip(a, 1), offset=-i + h-1,
+                           axis1=0, axis2=1).copy().mean()
+
+    return s
+    
 
 # convert an array of values into a dataset matrix
 def create_dataset(dataset, look_back=1):
@@ -70,7 +82,38 @@ def create_dataset(dataset, look_back=1):
     dataset = np.concatenate((dataX, dataY), axis=1)
     return dataset
 
+def scaler_inverse(scaler, data):
+    assert len(data.shape) == 2
+    _data = scaler.inverse_transform(data)
+    return _data
 
+def IQR_check(data, ids = None, r=1.5, l_b = True, u_b = True):
+    '''data shape: (samples,)
+    '''
+    if ids == None:
+        tag = list(range(data.shape[0]))
+    else:
+        tag = ids
+    eval_df = pd.DataFrame({'m': data, 'tag':tag})
+    
+    eval_q1 = eval_df['m'].quantile(0.25, interpolation='nearest')
+    eval_q3 = eval_df['m'].quantile(0.75, interpolation='nearest')
+    eval_iqr = eval_q3 - eval_q1
+    eval_l_bound = eval_q1 - r * eval_iqr
+    eval_u_bound = eval_q3 + r * eval_iqr
+    if l_b and u_b:
+        outlier_ids = eval_df[(eval_df['m'] < eval_l_bound) | (eval_df['m'] > eval_u_bound)].index.tolist()
+    elif l_b and u_b is False:
+        outlier_ids = eval_df[eval_df['m'] > eval_u_bound].index.tolist()
+    elif l_b is False and u_b:
+        outlier_ids = eval_df[eval_df['m'] < eval_l_bound].index.tolist()
+    else:
+        outlier_tag = []
+        return outlier_tag 
+    
+    outlier_tag =  eval_df['tag'].loc[outlier_ids].values.tolist()
+    
+    return outlier_tag
 # def unpadding(y):
 #     a = y.copy()
 #     h = y.shape[1]
@@ -81,9 +124,34 @@ def create_dataset(dataset, look_back=1):
 #                            axis1=0, axis2=1).copy().mean()
 
 #     return s
+def if_choose(data, if_op):
+    '''
+    data: numpy array (sample, dims, steps)\n
+    if_op: list lens== steps
+    '''
+    _data = []
+    for id, tag in enumerate(if_op):
+        if int(tag) == 1:
+            _data.append(data[:,:,id])
+    if_data = np.stack(_data, axis=-1)
+    return if_data
+
+def if_check(opts, length):
+    input_select = False
+    for i in range(length):
+        if 'if_strip_{}'.format(i) in opts.dict:
+            input_select = True
+            break
+    
+    if input_select:
+        for i in range(length):
+            if 'if_strip_{}'.format(i) not in opts.dict:
+                raise ValueError('Missing hyper config: "strip_{}"!'.format(i))
+    
+    return input_select  
 
 
-class scaled_Dataset(Dataset):
+class torch_Dataset(Dataset):
     '''
     Packing the input x_data and label_data to torch.dataset
     '''
@@ -173,7 +241,7 @@ class multiClass_Dataset(Dataset):
         
 #         count += 1
 
-#     packed_dataset = scaled_Dataset(x_data=x_input, label_data=label)
+#     packed_dataset = torch_Dataset(x_data=x_input, label_data=label)
 #     return packed_dataset, x_input, label
 
 # def deepAR_weight(x_batch, steps):
@@ -336,6 +404,7 @@ def plot_all_epoch(variable, save_name, location='./figures/'):
     plt.close()
 
 def plot_xfit(fit_info, save_name, location='./figures/'):
+    os_makedirs(location)
     tloss,vloss = np.array(fit_info.loss_list), np.array(fit_info.vloss_list)
     num_samples = tloss.shape[0]
     x = np.arange(start=1, stop=num_samples + 1)
@@ -347,7 +416,24 @@ def plot_xfit(fit_info, save_name, location='./figures/'):
     np.save(os.path.join(location, save_name) + '.loss', (tloss, vloss))
     plt.close()
 
-
+def plot_hError(H_error, metrics, cid = 0, location = './figures/'):
+    
+    os_makedirs(location)
+    x = np.arange(start=1, stop=H_error.shape[0] + 1)
+    
+    for i, m in enumerate(metrics):
+        f = plt.figure()
+        plt.plot(x, H_error[:, i], label = m)
+        plt.legend()
+        
+        # x_range = np.arange(1, horizon + 1)
+        # plt.xticks(x_range)
+        f.savefig(os.path.join(location, '{}.cv{}.step.error.png'.format(m, cid)))
+        plt.close()
+        # np.save(os.path.join(location, m + '.step.error'), H_error[:,i])
+    
+    
+    
 def plot_eight_windows(plot_dir,
                        predict_values,
                        predict_sigma,

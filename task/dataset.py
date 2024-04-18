@@ -1,4 +1,5 @@
 # from sklearn.model_selection import TimeSeriesSplit
+from asyncio import FastChildWatcher
 import os
 import sys
 sys.path.append(os.path.join(os.path.dirname(__file__), os.path.pardir))
@@ -8,6 +9,8 @@ from torch.utils.data import Dataset, Sampler
 import numpy as np
 import torch
 
+from torch.utils.data import DataLoader
+from torch.utils.data.sampler import RandomSampler,SequentialSampler
 
 def difference(dataset, interval=1):
     diff = list()
@@ -40,33 +43,8 @@ def unpadding(y):
 
 # convert an array of values into a dataset matrix
 
-def create_dataset(dataset, look_back=1):
-    # dataset = np.insert(dataset, [0] * look_back, 0)
-    dataX, dataY = [], []
-    for i in range(len(dataset) - look_back):
-        a = dataset[i:(i + look_back)]
-        dataX.append(a)
-        dataY.append(dataset[i + look_back])
-    dataY = np.array(dataY)
-    dataY = np.reshape(dataY, (dataY.shape[0], 1))
-    dataset = np.concatenate((dataX, dataY), axis=1)
-    return dataset
 
-class scaled_Dataset(Dataset):
-    '''
-    Packing the input x_data and label_data to torch.dataset
-    '''
-    def __init__(self, x_data, label_data):
-        self.data = np.float32(x_data.copy())
-        self.label = np.float32(label_data.copy())
-        self.samples = self.data.shape[0]
-        # logger.info(f'samples: {self.samples}')
 
-    def __len__(self):
-        return self.samples
-
-    def __getitem__(self, index):
-        return (self.data[index], self.label[index])
 
 
 def deepAR_dataset(data, train=True, h=None, steps=None, sample_dense=True):
@@ -109,7 +87,7 @@ def deepAR_dataset(data, train=True, h=None, steps=None, sample_dense=True):
 
         count += 1
 
-    packed_dataset = scaled_Dataset(x_data=x_input, label_data=label)
+    packed_dataset = torch_Dataset(x_data=x_input, label_data=label)
     return packed_dataset, x_input, label
 
 
@@ -153,52 +131,8 @@ class deepAR_WeightedSampler(Sampler):
 #     _pred = opts.scaler.inverse_transform(cat)[:, -opts.H:]
 #     return _pred
 
-def de_scale(opts, input, tag='target'):
-    assert tag in ['input', 'target']
-    _input = input.copy()
-    if tag == 'input':
-        ones = np.ones((_input.shape[0], opts.H))
-        cat = np.concatenate((_input, ones), axis=1)
-        _input = opts.scaler.inverse_transform(cat)[:, :opts.steps]
-    if tag == 'target':
-        ones = np.ones((_input.shape[0], opts.steps))
-        cat = np.concatenate((ones, _input), axis=1)
-        _input = opts.scaler.inverse_transform(cat)[:, -opts.H:]
-    return _input
-
-def re_scale(opts, input, tag=None):
-    assert tag in ['input', 'target']
-    _input = input.copy()
-    if tag == 'input':
-        ones = np.ones((_input.shape[0], opts.H))
-        cat = np.concatenate((_input, ones), axis=1)
-        _input = opts.scaler.transform(cat)[:, :opts.steps]
-    if tag == 'target':
-        ones = np.ones((_input.shape[0], opts.steps))
-        cat = np.concatenate((ones, _input), axis=1)
-        _input = opts.scaler.transform(cat)[:, -opts.H:]
-    return _input
 
 
-
-
-def mlp_dataset(data, h, steps):
-    x = data[:, :(0 - h)].reshape(data.shape[0], steps)
-    y = data[:, (0-h):].reshape(-1, h)
-    data_set = scaled_Dataset(x_data=x, label_data=y)
-
-    return data_set, x, y
-
-def dnn_dataset(data, h, steps):
-    '''
-    x, shape: (N_samples, dimensions(input_dim), steps)\n
-    y, shape: (N_samples, dimensions)
-    '''
-    x = data[:, :(0 - h)].reshape(data.shape[0], 1, steps)
-    y = data[:, (0-h):].reshape(-1, h)
-    data_set = scaled_Dataset(x_data=x, label_data=y)
-
-    return data_set, x, y
 
 
 # def rnn_dataset(data, h, steps, expand_dim=1):
@@ -209,6 +143,6 @@ def dnn_dataset(data, h, steps):
 #         x[:, :, i] = data[:, i:steps+i]
 #     # return the X with shape: samples, timesteps, dims
 
-#     data_set = scaled_Dataset(x_data=x, label_data=y)
+#     data_set = torch_Dataset(x_data=x, label_data=y)
 
 #     return data_set, x, y

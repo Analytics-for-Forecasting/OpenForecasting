@@ -7,12 +7,13 @@ from task.TaskLoader import Opt
 from tqdm import tqdm
 import torch
 
+from  task.TaskLoader import mlp_dataset, torch_dataloader
+
 class Naive():
-    def __init__(self, opts=None, logger=None):
+    def __init__(self, opts=None, logger=None, method = None):
         self.opts = opts
-        self.method = opts.method
+        self.method = opts.method if method is None else method
         self.logger = logger
-        self.device = torch.device('cpu')
         
     def xfit(self, train_loader, val_loader):
         return  Opt()
@@ -48,6 +49,10 @@ class Naive():
         
         return yPred
     
+    def data_loader(self, data):
+        set_loader = torch_dataloader(mlp_dataset(data, self.opts.H, self.opts.lag_order), batch_size= None,cuda= False)
+        return set_loader
+    
     def predict(self, input):
         if self.method == 'last':
             yPred = self.by_last(input)
@@ -65,8 +70,8 @@ class Naive():
         y = []
         # pred = []
         for batch_x, batch_y in tqdm(data_loader):
-            batch_x = batch_x.to(self.device)
-            batch_y = batch_y.to(self.device)
+            batch_x = batch_x.cpu()
+            batch_y = batch_y.cpu()
             # batch_pred = self.predict(batch_x)
             x.append(batch_x)
             y.append(batch_y)
@@ -76,6 +81,12 @@ class Naive():
         pred = self.predict(x)
         
         return x, y, pred        
+
+    def task_pred(self, task_data):
+        data_loader = self.data_loader(task_data)
+        x, y, pred = self.loader_pred(data_loader)
+        
+        return x, y, pred
     
 # class Naive_period(Naive):
 #     def __init__(self, opts=None, logger=None):
